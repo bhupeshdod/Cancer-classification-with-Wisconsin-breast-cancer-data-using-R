@@ -1,0 +1,442 @@
+---
+title:
+author: "MSCI718 2023W Individual Assignment 4 - Logistic Regression - Submitted by Bhupesh Dod (21046099)"
+output:
+  pdf_document: 
+    latex_engine: lualatex
+    df_print: paged
+header-includes:
+   - \usepackage{titlesec}
+   - \titlespacing{\title}{1.5pt}{\parskip}{-\parskip}
+   - \setlength{\parskip}{-0.1em}
+geometry: margin= 1.5cm
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(knitr)    # For knitting document and include_graphics function
+library(gridExtra) # For including grids of plots
+library(psych)
+library(dplyr)
+library(ggiraph)
+library(ggiraphExtra)
+library(car)
+library(corrplot)
+library(GGally) #for ggpairs
+library(caret)
+library(ResourceSelection)
+```
+
+# MSCI718 2023W Individual Assignment 4 - Logistic Regression
+
+### Data Description
+
+-   The Wisconsin breast cancer data set contains 569 records derived from the study of pictures of a fine needle aspirate of a breast mass. The first column contains a unique id, and the second column contains the diagnosis. There are no missing values, except the 33rd column which is empty.
+
+-   The outcome variable diagnosis has the levels **B (Benign 357 cases)** and **M (Malignant 212 cases)**.
+
+-   Columns 3-32 contain continuous numerical variables describing cellular properties as follows:
+
+Ten real-valued features (**radius** (mean of distances from centre to points on the perimeter), **texture** (standard deviation of gray-scale values), **perimeter, area, smoothness** (local variation in radius lengths), **compactness** (perimeter\^2 / area - 1.0), **concavity** (severity of concave portions of the contour), **concave points** (number of concave portions of the contour), **symmetry, fractal dimension** ("coastline approximation" - 1) are computed for **each cell nucleus, and their mean, standard error (SE) and worst values** for each feature are observed, resulting in 30 features.
+
+Diagnosis can be considered as outcome variables and rest of the features can be considered as predictor variables. "**It would be interesting to figure if the type of breast cancer (that is Benign or Malignant) can be predicted based on its features**".
+
+Since the outcome variable (diagnosis) is binary, the objective of this analysis is to create a prediction model with Logistic Regression. The analysis is interpretable with Benign (diagnosis = '0') as the default case.
+
+```{r message=FALSE, include=FALSE}
+cancer_dataset <- read.csv("cancer data.csv")
+summary(cancer_dataset)
+```
+
+```{r message=FALSE, include=FALSE, paged.print=FALSE}
+cancer_dataset <- cancer_dataset[,2:32]
+
+cancer_dataset$diagnosis <- factor(cancer_dataset$diagnosis, levels = c("B","M"), labels = c(0,1))
+cancer_dataset$diagnosis <- as.character(cancer_dataset$diagnosis)
+cancer_dataset$diagnosis <- as.numeric(cancer_dataset$diagnosis)
+
+str(cancer_dataset)
+```
+
+### Building a Model
+
+The correlation plot (shown in Appendix 2) demonstrates that some of the features (such as area, perimeter, and radius) are highly correlated. This is referred as multicollinearity, and it can have an impact on the performance of model.
+
+To address this highly correlated dataset, **three models of features with mean, se, and worst are formed** first, and the VIF[^1] of each individual group model is computed, and the variables with high correlation are removed (like perimeter and area), before performing **backward step elimination**[^2] on the resulting variable in the groups.
+
+[^1]: VIF (Variance Inflation Factor) to investigate multicollinearity
+
+[^2]: Eliminate variables that do not contribute significantly to the model and identify the set of predictor variables that best predict the outcome variable
+
+The reason for selecting this method is that the complexity of all subset methods grows exponentially with the number of variables. Since, we have large number of features (30) backward step model is used.
+
+Now, all the variables with significant AIC are concatenated into one model, and after applying backward step elimination for the last time and the **final model with 8 variables (radius_worst, smoothness_mean, concavity_mean, radius_se, texture_se, fractal_dimension_se, smoothness_worst, and concave.points_worst)** with **AIC of 108.81** and Residual deviation of 90.809 on 560 degree of freedom is determined. In Appendix 3 and 8, the model and step results are shown.
+
+```{r warning=FALSE, include=FALSE}
+selected_dataset <- cancer_dataset %>% select(diagnosis, radius_worst, smoothness_mean, concavity_mean, radius_se, texture_se, fractal_dimension_se, smoothness_worst, concave.points_worst) 
+
+final_model <- glm(formula = diagnosis ~., family = binomial(link = "logit"), data = selected_dataset)
+
+summary(final_model)
+vif(final_model)
+```
+
+```{r message=FALSE, include=FALSE}
+plot(final_model)
+```
+
+Now, Checking the assumptions of the Logistic Regression Model:
+
+### Assumptions
+
+1.  **Multicollinearity**: The largest value of VIF in the new model is 4.785 (less than 10) and the lowest tolerance (1/VIF) is 0.209 for smoothness_worst, (which is slightly more than 0.2) . Therefore, we proceed ahead with the assumption that there is no collinearity in the data.
+
+2.  **Linearity of Logit**: Logit Linearity test[^3] (results show in Appendix 4), demonstrates that all the features have p-values more than 0.05. In this case, none of the variables are significant, so we do not reject the assumption of linearity for these variables and continue with assumption of linearity.
+
+3.  **Independence Of Errors**: The Durbin-Watson test for independent errors was not significant at the 5% level of significance (d= 1.878, p=0.372). As d is close to 2, we do not reject the null hypothesis[^4] and continue with the assumption of independence met.
+
+4.  **Incomplete information**: Hosmer-Lemeshow[^5] test statistic is not statistically significant (i.e, p \> .05), suggest there is no evidence of lack of fit. And when the final model is compared with model with more feature, the chi-test statistic (result shown in Appendix 8) is not statistically significant (chi = 1.966, df = 5, p = 0.854), suggest the final model chosen best describe the predictor variables perfectly predict the outcome variable.
+
+5.  **Complete Separation**: Visualizing the scatter plots between predictor variables (shown in Appendix 7), it is clear that there is no complete separation in the data and hence this assumption does not get violated.
+
+[^3]: Add in interaction effects with the log of each predictor variable, and see if that is significant
+
+[^4]: Null hupothesis is that the errors are independent
+
+[^5]: Hosmer-Lemeshow test is a goodness-of-fit test for logistic regression models and is used to assess whether the model adequately fits the data
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+##Multicollinearity
+print("VIF Values:")
+vif(final_model)
+print("Tolerance:")
+1 / vif(final_model)
+```
+
+```{r message=FALSE, include=FALSE}
+max(vif(final_model))
+min(1/vif(final_model))
+mean(vif(final_model))
+```
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+##Independence Of Errors
+durbinWatsonTest(final_model)
+```
+
+```{r warning=FALSE, include=FALSE}
+##Linearity of Logit
+selected_dataset_test <- selected_dataset %>%
+  mutate(
+    log.texture_se <- log(texture_se)*texture_se,
+    log.fractal_dimension_se <- log(fractal_dimension_se)*fractal_dimension_se,
+    log.radius_worst <- log(radius_worst)*radius_worst,
+    log.concavity_mean <- log(concavity_mean)*concavity_mean,
+    log.radius_se <- log(radius_se)*radius_se,
+    log.concave.points_worst <- log(concave.points_worst)*concave.points_worst,
+    log.smoothness_worst <- log(smoothness_worst)*smoothness_worst,
+    log.smoothness_mean <- log(smoothness_mean)*smoothness_mean,
+  )
+
+selected_dataset_linearity_test <- glm(diagnosis ~ ., data = selected_dataset_test, family=binomial(link = "logit"))
+
+summary(selected_dataset_linearity_test)
+```
+
+#### Checking for Outliers and Influential Points
+
+There are 7 residuals are above or below 1.96 standard deviations. As this represents approximately 1.5 % of the observations, which are expected[^6], hence we do not consider any of these observations as outliers and continued with all observations included in the model. The max Cook's distance for model is 0.471 which is less than '1'. Hence, we conclude that there are no influential cases in our model.
+
+[^6]: 5% of data is expected to be outside of 2 standard deviations.
+
+```{r message=FALSE, include=FALSE}
+
+## Checking for Outliers and Influential Points
+selected_dataset_outliers <- selected_dataset
+selected_dataset_outliers$fitted <- final_model$fitted.values
+selected_dataset_outliers$residuals <- final_model$residuals
+selected_dataset_outliers$standardized.residuals <- rstandard(final_model)
+possible.outliers <- subset(selected_dataset_outliers, standardized.residuals < -1.96 | standardized.residuals > 1.96)
+possible.outliers
+```
+
+```{r message=FALSE, include=FALSE}
+##Influential Cases
+selected_dataset_outliers$cooks <- cooks.distance(final_model)
+plot(sort(selected_dataset_outliers$cooks, decreasing=TRUE))
+influential_cases <- subset(selected_dataset_outliers, cooks>1)
+influential_cases
+
+max(selected_dataset_outliers$cooks)
+```
+
+### Analysis
+
+Model Analysis and Interpretation, based on the calculated **co-efficient and their p-values (shown in below table 1), we can reject Null Hypothesis**[^7] and conclude that our model is significant. The model is summarized in Appendix 3.
+
+[^7]: **Null Hypothesis is Coefficients of predictor variables in the Logistic Regression model are zero.**
+
+Using confidence intervals, it can be seen that the intercept is between -41.96 and -20.86, which does not overlap one. This means there is a **significant difference between the odds of type of breast cancer being Benign and Malignant in general**, at the 5% level of significance. Also, we can conclude that none of the intervals for features overlap '1', indicating that **all the features have some impact on the diagnosis of breast cancer**, at 5% level of significance.
+
+To interpret the co-efficient, converted them to **odd ratio** (measure of effect size of the feature on the outcome) using exponential and results are shown in table 1. Based on the **Odds ratio**, we observe that `smoothness_worst` has a significant impact on the outcome and `fractal_dimension_se` has lowest impact.
+
+```{r message=FALSE, warning=FALSE, include=FALSE, paged.print=TRUE}
+odds_ratio <- round(exp(coef(final_model)), 300)
+confIntervals <- round(confint(final_model), 5)
+coef_model <- round(summary(final_model)$coefficients, 5)
+table_1 <- cbind(odds_ratio, confIntervals, coef_model)
+table_1
+#knitr::kable(table_1, format = "markdown")
+```
+
+| Variable             | Odds Ratio (OR) |  2.5 %   |  97.5 %  | Estimate | Std. Error | z value  | Pr(\>\|z\|) |
+|:-----------------|:-----------:|:------:|:------:|:------:|:-------:|:------:|:------:|
+| (Intercept)          |    8.279e-14    | -41.9632 | -20.8591 | -30.122  |   5.3033   | -5.67995 |   \<0.001   |
+| radius_worst         |      2.928      |  0.6947  | 1.54711  | 1.07436  |   0.2142   | 5.01550  |   \<0.001   |
+| smoothness_mean      |    1.286e-57    | -233.258 | -42.3103 | -130.996 |  48.1771   | -2.71905 |   0.00655   |
+| concavity_mean       |    2.638e+09    |  1.4482  | 42.41813 |  21.693  |  10.3747   | 2.09098  |   0.03653   |
+| radius_se            |    1.055e+04    |  4.2742  | 14.94634 | 9.26392  |   2.6026   | 3.55943  |   0.00037   |
+| texture_se           |      7.554      |  0.626   | 3.56496  | 2.02201  |   0.7403   | 2.73142  |   0.00631   |
+| fractal_dimension_se |   1.371e-206    | -872.745 | -158.816 | -474.017 |  185.4036  | -2.55668 |   0.01057   |
+| smoothness_worst     |    7.886e+46    | 54.6958  | 167.763  | 107.984  |  28.61091  | 3.77423  |   0.00016   |
+| concave.points_worst |    9.144e+16    | 11.0346  | 70.1363  | 39.0544  |  14.95191  | 2.61200  |   0.00900   |
+
+: Odd-ratio, confidence interval, and estimates of coefficients of model with z-values and p-values
+
+### Conclusion
+
+The logistic regression model built with eight variables was used to examine the association between predictor variables and the likelihood of breast cancer diagnosis in a sample of patients. Results indicated that **Intercept** (OR = 8.279e-14, p\<0.001), **radius_worst** (OR = 2.928, p\<0.001), **smoothness_mean** (OR = 1.286e-57, p\<0.01), **concavity_mean** (OR = 2.638e+09, p\<0.05), **radius_se** (OR = 1.055e+04, p\<0.004), **texture_se** (OR = 7.554, p\<0.01), **fractal_dimension_se** (OR = 1.371e-206, p\<0.05), **smoothness_worst** (OR = 7.886e+46, p\<0.01), and **concave.points_worst** (OR = 9.144e+16, p\<0.01) were significant predictors of breast cancer diagnosis, after controlling for other variables in the model.
+
+As no confidence interval has 1 lying in its range, direction of the Odd's Interval can be considered reliable. For instance, **If the value of radius_worst increases by 1, the odds of the outcome variable occurring (type of breast cancer being Malignant) increase by a factor of 2.928.**
+
+The model fit the data well with **AIC of 108.81**. However, it is important to note that these results are based on a cross-sectional sample and **cannot be generalized to the population at large**. Future research is needed to confirm these findings and explore other potential predictors of breast cancer diagnosis.
+
+# Appendix
+
+### Appendix 1: Data Description
+
+```{r echo=FALSE}
+str(cancer_dataset)
+```
+
+### Appendix 2: Correlation of Dataset
+
+```{r echo=FALSE, paged.print=TRUE}
+cor_matrix <- cancer_dataset
+
+options(repr.plot.width = 15, repr.plot.height = 15) # set dimensions of plots
+
+corrplot(cor(cor_matrix), number.cex = .9, method = "square", hclust.method = "ward", order = "FPC", type = "full", tl.cex=0.8,tl.col = "black")
+```
+
+## Appendix 3: Summary of Final Logistic Model
+
+```{r echo=FALSE, warning=FALSE}
+final_model <- glm(formula = diagnosis ~., family = binomial(link = "logit"), data = selected_dataset)
+
+summary(final_model)
+vif(final_model)
+```
+
+```{r message=FALSE, include=FALSE}
+plot(final_model)
+```
+
+## Appendix 4: Assumption Test results of Logistic Model
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+##Multicollinearity
+print("VIF Values:")
+vif(final_model)
+print("Tolerance:")
+1 / vif(final_model)
+```
+
+```{r message=FALSE, include=FALSE}
+max(vif(final_model))
+min(1/vif(final_model))
+mean(vif(final_model))
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+##Independence Of Errors
+durbinWatsonTest(final_model)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+hl_test <- hoslem.test(fitted(final_model), selected_dataset$diagnosis, g = 100)
+hl_test
+```
+
+### Linearity Test results
+
+```{r echo=FALSE, warning=FALSE, paged.print=TRUE}
+##Linearity of Logit
+selected_dataset_test <- selected_dataset %>%
+  mutate(
+    log.texture_se <- log(texture_se)*texture_se,
+    log.fractal_dimension_se <- log(fractal_dimension_se)*fractal_dimension_se,
+    log.radius_worst <- log(radius_worst)*radius_worst,
+    log.concavity_mean <- log(concavity_mean)*concavity_mean,
+    log.radius_se <- log(radius_se)*radius_se,
+    log.concave.points_worst <- log(concave.points_worst)*concave.points_worst,
+    log.smoothness_worst <- log(smoothness_worst)*smoothness_worst,
+    log.smoothness_mean <- log(smoothness_mean)*smoothness_mean,
+  )
+
+selected_dataset_linearity_test <- glm(diagnosis ~ ., data = selected_dataset_test, family=binomial(link = "logit"))
+
+summary(selected_dataset_linearity_test)
+```
+
+```{r include=FALSE}
+selected_matrix <- selected_dataset
+
+options(repr.plot.width = 15, repr.plot.height = 15) # set dimensions of plots
+
+corrplot(cor(selected_matrix), number.cex = .9, method = "square", hclust.method = "ward", order = "FPC", type = "full", tl.cex=0.8,tl.col = "black")
+```
+
+### Appendix 5: Histogram of predictor variables
+
+```{r echo=FALSE, fig.height=4, fig.width=16, message=FALSE, warning=FALSE}
+
+plt1 <- ggplot(selected_dataset, aes(x = concavity_mean)) + geom_histogram(width = 0.1)
+plt2 <- ggplot(selected_dataset, aes(x = smoothness_mean)) + geom_histogram(width = 0.1)
+plt3 <- ggplot(selected_dataset, aes(x = texture_se)) + geom_histogram(width = 0.1)
+plt4 <- ggplot(selected_dataset, aes(x = fractal_dimension_se)) + geom_histogram(width = 0.1)
+plt5 <- ggplot(selected_dataset, aes(x = radius_se)) + geom_histogram(width = 0.1)
+plt6 <- ggplot(selected_dataset, aes(x = radius_worst)) + geom_histogram(width = 0.1)
+plt7 <- ggplot(selected_dataset, aes(x = smoothness_worst)) + geom_histogram(width = 0.1)
+plt8 <- ggplot(selected_dataset, aes(x = concave.points_worst)) + geom_histogram(width = 0.1)
+
+grid.arrange(plt1,plt2,plt3,plt4,plt5,plt6,plt7,plt8, ncol = 4, nrow = 2, top = "Histogram of Features", bottom = "Appendix(5)")
+```
+
+### Appendix 6: Boxplot of predictor variables
+
+```{r echo=FALSE, fig.height=7, fig.width=16}
+
+plt1 <- ggplot(selected_dataset, aes(y = concavity_mean)) + geom_boxplot(width = 0.1)
+plt2 <- ggplot(selected_dataset, aes(y = smoothness_mean)) + geom_boxplot(width = 0.1)
+plt3 <- ggplot(selected_dataset, aes(y = texture_se)) + geom_boxplot(width = 0.1)
+plt4 <- ggplot(selected_dataset, aes(y = fractal_dimension_se)) + geom_boxplot(width = 0.1)
+plt5 <- ggplot(selected_dataset, aes(y = radius_se)) + geom_boxplot(width = 0.1)
+plt6 <- ggplot(selected_dataset, aes(y = radius_worst)) + geom_boxplot(width = 0.1)
+plt7 <- ggplot(selected_dataset, aes(y = smoothness_worst)) + geom_boxplot(width = 0.1)
+plt8 <- ggplot(selected_dataset, aes(y = concave.points_worst)) + geom_boxplot(width = 0.1)
+
+grid.arrange(plt1,plt2,plt3,plt4,plt5,plt6,plt7,plt8, ncol = 4, nrow = 2, top = "Boxplots of Features", bottom = "Appendix(6)")
+```
+
+### Appendix 7: Jitter Scatterplot of predictor variables
+
+```{r echo=FALSE, fig.height=5, fig.width=16, message=FALSE, warning=FALSE}
+
+g1 <- selected_dataset %>% ggplot(aes(y=diagnosis,x=concavity_mean,alpha=radius_se)) + geom_point()+ geom_jitter(width = 0.5, height=0.25)
+g2 <- selected_dataset %>% ggplot(aes(y=diagnosis,x=radius_worst,alpha=concave.points_worst)) + geom_point()+ geom_jitter(width = 0.5, height=0.25)
+g3 <- selected_dataset %>% ggplot(aes(y=diagnosis,x=fractal_dimension_se,aplha=texture_se)) + geom_point()+ geom_jitter(width = 0.5, height=0.25)
+g4 <- selected_dataset %>% ggplot(aes(y=diagnosis,x=smoothness_worst,alpha=smoothness_mean)) + geom_point()+ geom_jitter(width = 0.5, height=0.25)
+
+grid.arrange(g1,g2,g3,g4, nrow = 2, ncol = 2)
+```
+
+```{r echo=FALSE}
+#-------------------------------------#  
+####     visualize the model      #####
+#-------------------------------------#
+g1 <- ggplot(selected_dataset, aes(radius_worst, diagnosis)) +geom_point(alpha = .75, cex = 3, pch = "|", stroke = 6) + geom_smooth(method = "glm", formula = 'y ~ x', method.args = list(family = "binomial"), color = "red", lwd = 2) + labs(title = "Logistic Regression Model Fit", y = "Probability of Malignant Cancer", x = "Radius Worst") + theme_bw(base_size = 8)
+g2 <- ggplot(selected_dataset, aes(concave.points_worst, diagnosis)) +geom_point(alpha = .75, cex = 3, pch = "|", stroke = 6) + geom_smooth(method = "glm", formula = 'y ~ x', method.args = list(family = "binomial"), color = "red", lwd = 2) + labs(title = "Logistic Regression Model Fit", y = "Probability of Malignant Cancer", x = "Radius Worst") + theme_bw(base_size = 8)
+
+grid.arrange(g1,g2, nrow = 1, ncol = 2)
+```
+
+```{r eval=FALSE, message=FALSE, warning=FALSE, include=FALSE}
+
+# Cancer Mean Model Analysis
+
+cancer_mean_model <- glm(diagnosis~radius_mean + texture_mean + perimeter_mean + area_mean + smoothness_mean + compactness_mean + concavity_mean + concave.points_mean + symmetry_mean + fractal_dimension_mean, data= cancer_dataset, family = binomial(link = 'logit'))
+
+vif(cancer_mean_model)
+```
+
+```{r include=FALSE}
+cancer_mean_model <- glm(formula = diagnosis ~ radius_mean + texture_mean + smoothness_mean + concavity_mean + concave.points_mean + symmetry_mean + fractal_dimension_mean, family = binomial(link = "logit"),data = cancer_dataset)
+step(cancer_mean_model, direction="backward")
+```
+
+```{r message=FALSE, include=FALSE}
+## Cancer Mean Model
+model_mean <- glm(diagnosis ~ radius_mean + texture_mean + smoothness_mean + concavity_mean + concave.points_mean + symmetry_mean + fractal_dimension_mean, data= cancer_dataset, family = binomial(link = 'logit'))
+
+summary(model_mean)
+
+vif(model_mean)
+```
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+# Cancer SE Model Analysis
+cancer_se_model <- glm(diagnosis~radius_se + texture_se + perimeter_se + area_se + smoothness_se + compactness_se + concavity_se + concave.points_se + symmetry_se + fractal_dimension_se, data = cancer_dataset, family = binomial(link = 'logit'))
+
+vif(cancer_se_model)
+```
+
+```{r warning=FALSE, include=FALSE}
+cancer_se_model <- glm(diagnosis ~ texture_se + radius_se + smoothness_se + compactness_se + concavity_se + concave.points_se + symmetry_se + fractal_dimension_se, data= cancer_dataset, family = binomial(link = 'logit'))
+step(cancer_se_model, direction="backward")
+```
+
+```{r include=FALSE}
+
+## Cancer SE Model
+model_se <- glm(formula = diagnosis ~ radius_se + texture_se + smoothness_se + compactness_se + concave.points_se + symmetry_se + fractal_dimension_se, family = binomial(link = "logit"), data = cancer_dataset)
+summary(model_se)
+
+vif(model_se)
+```
+
+```{r warning=FALSE, include=FALSE}
+
+# Cancer WORST Model Analysis
+cancer_worst_model <- glm(diagnosis~radius_worst+texture_worst+perimeter_worst+area_worst+smoothness_worst+compactness_worst+concavity_worst+concave.points_worst+symmetry_worst+fractal_dimension_worst, data= cancer_dataset, family = binomial(link = 'logit'))
+
+vif(cancer_worst_model)
+```
+
+```{r warning=FALSE, include=FALSE}
+
+cancer_worst_model <- glm(diagnosis~texture_worst+radius_worst+smoothness_worst+concavity_worst+concave.points_worst+symmetry_worst+fractal_dimension_worst, data= cancer_dataset, family = binomial(link = 'logit'))
+step(cancer_worst_model, direction="backward")
+```
+
+```{r, include=FALSE}
+## Cancer WORST Model
+model_worst <- glm(formula = diagnosis ~ texture_worst + radius_worst + smoothness_worst + concave.points_worst, family = binomial(link = "logit"), data = cancer_dataset)
+
+summary(model_worst)
+
+vif(model_worst)
+```
+
+### Appendix 8: Final Model Analysis
+
+```{r echo=FALSE, warning=FALSE}
+model <- glm(formula = diagnosis ~ smoothness_mean + concavity_mean + concave.points_mean + symmetry_mean + fractal_dimension_mean + radius_se + texture_se + concave.points_se + symmetry_se + fractal_dimension_se + radius_worst + smoothness_worst + concave.points_worst, family = binomial(link="logit"), data = cancer_dataset)
+
+vif(model)
+```
+
+```{r echo=FALSE, warning=FALSE, paged.print=TRUE}
+step(model, direction="backward")
+```
+
+```{r echo=FALSE}
+modelChi <- final_model$deviance - model$deviance
+chidf <- final_model$df.residual - model$df.residual
+chisq.prob <- 1 - pchisq(modelChi, chidf)
+modelChi
+chidf
+chisq.prob
+```
