@@ -16,6 +16,7 @@ The final logistic regression model includes eight significant features.<br>
 Multicollinearity and independence of errors were adequately addressed.<br>
 Model diagnostics indicated a good fit to the data, with no evidence of lack of fit from the Hosmer-Lemeshow test.
 
+
 | Variable               | Odds Ratio (OR)   | 2.5 %      | 97.5 %    | Estimate | Std. Error | z value | Pr(>|z|) |
 |------------------------|-------------------|------------|-----------|----------|------------|---------|----------|
 | (Intercept)            | 8.279e-14         | -41.9632   | -20.8591  | -30.122  | 5.3033     | -5.67995| <0.001   |
@@ -27,6 +28,7 @@ Model diagnostics indicated a good fit to the data, with no evidence of lack of 
 | fractal_dimension_se   | 1.371e-206        | -872.745   | -158.816  | -474.017 | 185.4036   | -2.55668| 0.01057  |
 | smoothness_worst       | 7.886e+46         | 54.6958    | 167.763   | 107.984  | 28.61091   | 3.77423 | 0.00016  |
 | concave.points_worst   | 9.144e+16         | 11.0346    | 70.1363   | 39.0544  | 14.95191   | 2.61200 | 0.00900  |
+
 
 **Conclusion** <br>
 The analysis successfully identifies significant predictors for breast cancer diagnosis. However, it is emphasized that these findings are based on a specific sample and further research is required for generalization.
